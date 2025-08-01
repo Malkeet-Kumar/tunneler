@@ -1,24 +1,56 @@
-const net = require('net');
+// client/client.js
+const WebSocket = require('ws');
+const http = require('http');
 
-const LOCAL_PORT = 3000;            // The app you want to expose
-const TUNNEL_SERVER_HOST = 'your.server.ip';
-const TUNNEL_SERVER_PORT = 8080;
+const LOCAL_PORT = 9000;
+const REMOTE_WSS = 'wss://tunnel.cargo-fox.com';
 
-const server = net.createServer((tunnelSocket) => {
-  const localSocket = net.connect({ port: LOCAL_PORT }, () => {
-    console.log('Tunnel connection established to local app.');
-    tunnelSocket.pipe(localSocket);
-    localSocket.pipe(tunnelSocket);
-  });
+const ws = new WebSocket(REMOTE_WSS);
 
-  localSocket.on('error', (err) => {
-    console.error('Local app error:', err.message);
-    tunnelSocket.destroy();
-  });
+ws.on('open', () => {
+  console.log('✅ Connected to tunnel server');
 });
 
-server.listen(9000, () => {
-  console.log('Client tunnel listener waiting on port 9000');
-});
+ws.on('message', (msg) => {
+  const reqData = JSON.parse(msg);
+  const { correlationId, method, url, headers, body } = reqData;
 
-net.connect({ host: TUNNEL_SERVER_HOST, port: TUNNEL_SERVER_PORT });
+  const options = {
+    hostname: 'localhost',
+    port: LOCAL_PORT,
+    path: url,
+    method,
+    headers,
+  };
+
+  const proxyReq = http.request(options, (proxyRes) => {
+    const chunks = [];
+    proxyRes.on('data', chunk => chunks.push(chunk));
+    proxyRes.on('end', () => {
+      const response = {
+        correlationId,
+        statusCode: proxyRes.statusCode,
+        headers: proxyRes.headers,
+        body: Buffer.concat(chunks).toString(),
+      };
+      ws.send(JSON.stringify(response));
+    });
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('❌ Error connecting to local server:', err.message);
+    const response = {
+      correlationId,
+      statusCode: 502,
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'Could not connect to local app',
+    };
+    ws.send(JSON.stringify(response));
+  });
+
+  if (body) {
+    proxyReq.write(body);
+  }
+
+  proxyReq.end();
+});

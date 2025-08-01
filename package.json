@@ -17,5 +17,8 @@
   "bugs": {
     "url": "https://github.com/Malkeet-Kumar/tunneler/issues"
   },
-  "homepage": "https://github.com/Malkeet-Kumar/tunneler#readme"
+  "homepage": "https://github.com/Malkeet-Kumar/tunneler#readme",
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
 }
